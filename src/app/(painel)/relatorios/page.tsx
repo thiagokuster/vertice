@@ -4,7 +4,7 @@ import { Permission, userCan } from "@/lib/permissions";
 import { getReport, REPORT_OPTIONS, displayCell, type ReportId } from "@/lib/reports";
 import { parseDateInput } from "@/lib/format";
 import { PageHeader, NativeSelect, EmptyState } from "@/components/page";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
@@ -63,8 +63,8 @@ export default async function RelatoriosPage({
       </form>
       {canExport ? (
         <div className="mb-4 flex gap-2">
-          <Button variant="outline" render={<a href={`/api/relatorios/export?${exportQuery.toString()}&formato=pdf`} />}>Exportar PDF</Button>
-          <Button variant="outline" render={<a href={`/api/relatorios/export?${exportQuery.toString()}&formato=xlsx`} />}>Exportar Excel</Button>
+          <a className={buttonVariants({ variant: "outline" })} href={`/api/relatorios/export?${exportQuery.toString()}&formato=pdf`}>Exportar PDF</a>
+          <a className={buttonVariants({ variant: "outline" })} href={`/api/relatorios/export?${exportQuery.toString()}&formato=xlsx`}>Exportar Excel</a>
         </div>
       ) : null}
       <p className="mb-3 text-sm text-muted-foreground">{report.description}</p>

@@ -4,7 +4,7 @@ import { requirePermission } from "@/lib/session";
 import { Permission, userCan } from "@/lib/permissions";
 import { formatNumber } from "@/lib/format";
 import { PageHeader, EmptyState, Pager, NativeSelect } from "@/components/page";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -60,8 +60,8 @@ export default async function ProdutosPage({
         description="Consulte saldo, localização e situação de cada item."
         action={canCreate ? (
           <div className="flex gap-2">
-            <Button variant="outline" render={<Link href="/produtos/importar" />}>Importar CSV</Button>
-            <Button render={<Link href="/produtos/novo" />}>Novo produto</Button>
+            <Link href="/produtos/importar" className={buttonVariants({ variant: "outline" })}>Importar CSV</Link>
+            <Link href="/produtos/novo" className={buttonVariants()}>Novo produto</Link>
           </div>
         ) : null}
       />
