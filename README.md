@@ -1,36 +1,55 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Vértice
 
-## Getting Started
+Sistema web de gestão de estoque. Entradas, saídas, transferências e ajustes ficam no histórico, e cada pessoa acessa só o que o seu perfil permite.
 
-First, run the development server:
+## 🚀 Demo
+
+Ainda não há uma versão publicada. Depois de rodar localmente, abra [http://localhost:3000](http://localhost:3000).
+
+## 🛠️ Tecnologias
+
+- Next.js
+- React
+- TypeScript
+- Tailwind CSS
+- Prisma
+- SQLite
+- Auth.js
+- shadcn/ui
+- Zod
+
+## ✨ Funcionalidades
+
+- Login, recuperação de senha e sessão com expiração
+- Três perfis: administrador, padrão e ajudante, com permissão conferida no servidor
+- Produtos, categorias, fornecedores e depósitos
+- Entradas, saídas, transferências e ajustes, com histórico que não é apagado
+- Alertas de estoque baixo, zerado e perto da validade
+- Relatórios com exportação em PDF e Excel
+- Auditoria de acessos e alterações
+- Tema claro e escuro
+
+## 📦 Como rodar localmente
 
 ```bash
+git clone https://github.com/thiagokuster/vertice.git
+cd vertice
+npm install
+npx prisma migrate dev
+npm run db:seed
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Copie `.env.example` para `.env` antes de migrar e semear o banco. O gerenciador do projeto é o npm, com o lockfile `package-lock.json`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+No desenvolvimento, com `SEED_DEMO=true`, o seed cria usuários de exemplo:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- Administrador: `admin@estoque.local` / `Admin@123456`
+- Padrão: `operador@estoque.local` / `Operador@123456`
+- Ajudante: `ajudante@estoque.local` / `Ajudante@123456`
 
-## Learn More
+Em produção, defina `ADMIN_EMAIL` e `ADMIN_PASSWORD` e deixe `SEED_DEMO` desligado. A recuperação de senha envia e-mail se `SMTP_HOST` estiver configurado.
 
-To learn more about Next.js, take a look at the following resources:
+## 📄 Licença
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+[MIT](LICENSE)

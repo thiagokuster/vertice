@@ -1,0 +1,251 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  OPERATOR
+  ASSISTANT
+}
+
+enum MovementType {
+  ENTRY
+  EXIT
+  ADJUSTMENT
+  TRANSFER
+  REVERSAL
+}
+
+model User {
+  id                  String    @id @default(cuid())
+  name                String
+  email               String    @unique
+  passwordHash        String
+  role                Role
+  active              Boolean   @default(true)
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+  tokenVersion        Int       @default(0)
+  lastLoginAt         DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  movements     Movement[]
+  auditLogs     AuditLog[]
+  resetTokens   PasswordResetToken[]
+  notifications Notification[]
+  loginAttempts LoginAttempt[]
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+model RolePermission {
+  role       Role
+  permission String
+  granted    Boolean  @default(false)
+  updatedAt  DateTime @updatedAt
+
+  @@id([role, permission])
+}
+
+model SystemSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  entity    String
+  entityId  String?
+  metadata  String?
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([userId])
+  @@index([action])
+  @@index([entity, entityId])
+}
+
+model LoginAttempt {
+  id        String   @id @default(cuid())
+  email     String
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  success   Boolean
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([email, createdAt])
+  @@index([createdAt])
+}
+
+model Category {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  description String?
+  active      Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  products    Product[]
+}
+
+model Supplier {
+  id          String     @id @default(cuid())
+  companyName String
+  cnpj        String?    @unique
+  phone       String?
+  email       String?
+  address     String?
+  contactName String?
+  notes       String?
+  active      Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  products    Product[]
+  movements   Movement[]
+}
+
+model Warehouse {
+  id               String         @id @default(cuid())
+  name             String
+  code             String         @unique
+  description      String?
+  active           Boolean        @default(true)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  balances         StockBalance[]
+  lots             StockLot[]
+  movements        Movement[]     @relation("MovementWarehouse")
+  relatedMovements Movement[]     @relation("RelatedWarehouse")
+}
+
+model Product {
+  id          String         @id @default(cuid())
+  sku         String         @unique
+  barcode     String?        @unique
+  name        String
+  description String?
+  categoryId  String
+  category    Category       @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  supplierId  String?
+  supplier    Supplier?      @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  unit        String         @default("UN")
+  minStock    Int            @default(0)
+  maxStock    Int?
+  unitCost    Int            @default(0)
+  salePrice   Int?
+  location    String?
+  imagePath   String?
+  active      Boolean        @default(true)
+  trackExpiry Boolean        @default(false)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  balances    StockBalance[]
+  lots        StockLot[]
+  movements   Movement[]
+
+  @@index([name])
+  @@index([categoryId])
+  @@index([active])
+}
+
+model StockBalance {
+  id          String    @id @default(cuid())
+  productId   String
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  warehouseId String
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  quantity    Int       @default(0)
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([productId, warehouseId])
+}
+
+model StockLot {
+  id          String    @id @default(cuid())
+  productId   String
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  warehouseId String
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  lotCode     String    @default("")
+  quantity    Int
+  expiryDate  DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([productId, warehouseId, quantity])
+  @@index([expiryDate])
+}
+
+model Movement {
+  id                 String       @id @default(cuid())
+  type               MovementType
+  productId          String
+  product            Product      @relation(fields: [productId], references: [id], onDelete: Restrict)
+  warehouseId        String
+  warehouse          Warehouse    @relation("MovementWarehouse", fields: [warehouseId], references: [id], onDelete: Restrict)
+  relatedWarehouseId String?
+  relatedWarehouse   Warehouse?   @relation("RelatedWarehouse", fields: [relatedWarehouseId], references: [id], onDelete: SetNull)
+  quantity           Int
+  effect             Int
+  quantityBefore     Int
+  quantityAfter      Int
+  userId             String
+  user               User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  supplierId         String?
+  supplier           Supplier?    @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  invoiceNumber      String?
+  reason             String?
+  destination        String?
+  notes              String?
+  origin             String
+  lotSnapshot        String?
+  groupId            String?
+  idempotencyKey     String?      @unique
+  occurredAt         DateTime
+  createdAt          DateTime     @default(now())
+  reversalOfId       String?      @unique
+  reversalOf         Movement?    @relation("Reversal", fields: [reversalOfId], references: [id], onDelete: Restrict)
+  reversedBy         Movement?    @relation("Reversal")
+
+  @@index([productId, createdAt])
+  @@index([userId, createdAt])
+  @@index([type, occurredAt])
+  @@index([groupId])
+  @@index([occurredAt])
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  title     String
+  body      String
+  href      String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt, createdAt])
+}
