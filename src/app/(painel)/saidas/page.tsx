@@ -21,7 +21,7 @@ export default async function SaidasPage() {
   ]);
   return (
     <div>
-      <PageHeader title="Saída de mercadoria" description="A quantidade não pode ser maior que o saldo do depósito escolhido." />
+      <PageHeader title="Saída de mercadoria" description="A quantidade não pode passar do saldo disponível. O sistema retira primeiro o lote que vence antes e recusa lote vencido." />
       <ActionForm action={createExit} className="grid max-w-3xl gap-4 md:grid-cols-2">
         <Field label="Produto">
           <NativeSelect name="productId" required defaultValue="">

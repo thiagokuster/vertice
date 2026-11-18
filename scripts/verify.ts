@@ -1,6 +1,9 @@
 import { prisma } from "../src/lib/prisma";
 import { Permission, userCan } from "../src/lib/permissions";
-import { registerExit } from "../src/lib/inventory";
+import { InventoryError, registerExit } from "../src/lib/inventory";
+import { parseProductCsv } from "../src/lib/csv";
+import { removeUpload, saveProductImage } from "../src/lib/files";
+import { syncOperationalNotifications } from "../src/lib/notifications";
 import { assertCanDeactivate, assertCanDelete } from "../src/lib/users";
 
 async function main() {
@@ -62,6 +65,111 @@ try {
 } catch (error) {
   console.log("ok autodesativação bloqueada:", error instanceof Error ? error.message : error);
 }
+
+const csv = parseProductCsv("sku;nome;categoria\nAB-1;Item teste;Geral\n");
+if (csv.error || csv.rows[0]?.name !== "Item teste") {
+  failed += 1;
+  console.log("ERRO csv", csv);
+} else {
+  console.log("ok csv de produtos");
+}
+const csvMissing = parseProductCsv("nome;categoria\nItem;Geral\n");
+if (!csvMissing.error) {
+  failed += 1;
+  console.log("ERRO csv sem sku foi aceito");
+} else {
+  console.log("ok csv sem sku recusado");
+}
+
+const png = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64",
+);
+const imagePath = await saveProductImage(new File([png], "ponto.png", { type: "" }));
+await removeUpload(imagePath);
+console.log(imagePath.endsWith(".png") ? "ok imagem reconhecida pelo conteúdo" : "ERRO imagem");
+if (!imagePath.endsWith(".png")) failed += 1;
+
+const category = await prisma.category.findFirstOrThrow();
+const sample = await prisma.product.create({
+  data: { sku: "TEST-FEFO", name: "Teste de validade", categoryId: category.id, unit: "UN", trackExpiry: true },
+});
+const yesterday = new Date();
+yesterday.setDate(yesterday.getDate() - 2);
+yesterday.setHours(12, 0, 0, 0);
+const later = new Date();
+later.setDate(later.getDate() + 20);
+later.setHours(12, 0, 0, 0);
+try {
+  await prisma.stockBalance.create({ data: { productId: sample.id, warehouseId: warehouse.id, quantity: 5 } });
+  await prisma.stockLot.create({
+    data: { productId: sample.id, warehouseId: warehouse.id, lotCode: "VELHO", quantity: 3, expiryDate: yesterday },
+  });
+  await prisma.stockLot.create({
+    data: { productId: sample.id, warehouseId: warehouse.id, lotCode: "NOVO", quantity: 2, expiryDate: later },
+  });
+  try {
+    await registerExit({
+      actor: { userId: admin.id },
+      productId: sample.id,
+      warehouseId: warehouse.id,
+      quantity: 3,
+      reason: "teste de lote vencido",
+      occurredAt: new Date(),
+      idempotencyKey: `verify-fefo-blocked-${Date.now()}`,
+    });
+    failed += 1;
+    console.log("ERRO saída acima do lote válido passou");
+  } catch (error) {
+    if (error instanceof InventoryError && error.message.includes("vencido")) {
+      console.log("ok saída de lote vencido bloqueada");
+    } else {
+      failed += 1;
+      console.log("ERRO no bloqueio de vencido:", error instanceof Error ? error.message : error);
+    }
+  }
+  const exit = await registerExit({
+    actor: { userId: admin.id },
+    productId: sample.id,
+    warehouseId: warehouse.id,
+    quantity: 2,
+    reason: "teste fefo",
+    occurredAt: new Date(),
+    idempotencyKey: `verify-fefo-ok-${Date.now()}`,
+  });
+  const movement = await prisma.movement.findUniqueOrThrow({ where: { id: exit.movementId } });
+  const snapshot = JSON.parse(movement.lotSnapshot ?? "[]") as { lotCode: string; quantity: number }[];
+  if (snapshot.length === 1 && snapshot[0].lotCode === "NOVO" && snapshot[0].quantity === 2) {
+    console.log("ok saída usou o lote que vence primeiro");
+  } else {
+    failed += 1;
+    console.log("ERRO fefo", snapshot);
+  }
+  const expiredLeft = await prisma.stockLot.findFirst({ where: { productId: sample.id, lotCode: "VELHO" } });
+  if (expiredLeft?.quantity === 3) console.log("ok lote vencido permaneceu no estoque");
+  else {
+    failed += 1;
+    console.log("ERRO lote vencido foi alterado", expiredLeft?.quantity);
+  }
+} finally {
+  await prisma.movement.deleteMany({ where: { productId: sample.id } });
+  await prisma.stockLot.deleteMany({ where: { productId: sample.id } });
+  await prisma.stockBalance.deleteMany({ where: { productId: sample.id } });
+  await prisma.notification.deleteMany({ where: { href: `/produtos/${sample.id}` } });
+  await prisma.auditLog.deleteMany({ where: { entityId: sample.id } });
+  await prisma.product.delete({ where: { id: sample.id } });
+}
+
+await syncOperationalNotifications();
+const lowNotice = await prisma.notification.findFirst({ where: { type: "LOW_STOCK" } });
+const expiryNotice = await prisma.notification.findFirst({ where: { type: { in: ["EXPIRING", "EXPIRED"] } } });
+if (lowNotice) console.log("ok aviso de estoque baixo:", lowNotice.title);
+else {
+  failed += 1;
+  console.log("ERRO nenhum aviso de estoque baixo");
+}
+if (expiryNotice) console.log("ok aviso de validade:", expiryNotice.title);
+else console.log("ok sem lote perto do vencimento neste momento");
 
 await prisma.$disconnect();
 if (failed > 0) process.exit(1);

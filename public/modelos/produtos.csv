@@ -1,0 +1,3 @@
+sku;nome;categoria;unidade;codigo_barras;descricao;fornecedor;minimo;maximo;custo;preco;localizacao;controla_validade
+PAP-A4;Papel sulfite A4;Escritório;UN;7890000000011;Resma de 500 folhas;;20;200;18,90;32,00;Corredor A;não
+ALC-70;Álcool 70%;Limpeza;UN;;Galão de 1 litro;;5;40;6,50;12,00;Depósito;sim

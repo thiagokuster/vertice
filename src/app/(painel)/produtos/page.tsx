@@ -58,7 +58,12 @@ export default async function ProdutosPage({
       <PageHeader
         title="Produtos"
         description="Consulte saldo, localização e situação de cada item."
-        action={canCreate ? <Button render={<Link href="/produtos/novo" />}>Novo produto</Button> : null}
+        action={canCreate ? (
+          <div className="flex gap-2">
+            <Button variant="outline" render={<Link href="/produtos/importar" />}>Importar CSV</Button>
+            <Button render={<Link href="/produtos/novo" />}>Novo produto</Button>
+          </div>
+        ) : null}
       />
       <form className="mb-4 grid gap-2 md:grid-cols-4">
         <Input name="q" defaultValue={params.q} placeholder="Nome, SKU ou código de barras" />

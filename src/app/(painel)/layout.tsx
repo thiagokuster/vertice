@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/session";
 import { Permission, listPermissions } from "@/lib/permissions";
 import { ROLE_LABEL } from "@/lib/constants";
 import { getSettings } from "@/lib/settings";
+import { syncOperationalNotifications } from "@/lib/notifications";
 import { AppShell } from "@/components/shell";
 
 const NAV: { href: string; label: string; group: string; permission?: Permission }[] = [
@@ -25,6 +26,7 @@ const NAV: { href: string; label: string; group: string; permission?: Permission
 
 export default async function PainelLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
+  await syncOperationalNotifications().catch(() => undefined);
   const [granted, settings, unread] = await Promise.all([
     listPermissions(user),
     getSettings(),

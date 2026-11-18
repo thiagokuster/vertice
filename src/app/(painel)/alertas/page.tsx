@@ -18,7 +18,7 @@ export default async function AlertasPage() {
   ]);
   return (
     <div className="space-y-6">
-      <PageHeader title="Alertas" description="Situação atual do estoque e avisos das suas operações." action={<ActionForm action={markAllNotificationsRead}><SubmitButton variant="outline">Marcar avisos como lidos</SubmitButton></ActionForm>} />
+      <PageHeader title="Alertas" description="A lista acompanha o saldo e a validade. Avisos de estoque baixo, vencimento e lote vencido são gerados para administrador e perfil padrão." action={<ActionForm action={markAllNotificationsRead}><SubmitButton variant="outline">Marcar avisos como lidos</SubmitButton></ActionForm>} />
       <div className="grid gap-4 lg:grid-cols-2">
         <AlertList title="Abaixo do mínimo" items={alerts.low.map((item) => `${item.name} · ${formatNumber(item.quantity)} / mín. ${formatNumber(item.minStock)} · ${item.location || "sem local"}`)} href="/produtos" />
         <AlertList title="Sem estoque" items={alerts.empty.map((item) => `${item.sku} — ${item.name}`)} href="/produtos" />

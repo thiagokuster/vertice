@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/session";
 import { Permission, userCan } from "@/lib/permissions";
 import { saveProduct, deleteProduct } from "@/server/actions/catalog";
-import { formatBRL, formatDate, formatDateTime, formatNumber } from "@/lib/format";
+import { formatBRL, formatDate, formatDateTime, formatNumber, isLotExpired } from "@/lib/format";
 import { movementTitle } from "@/lib/constants";
 import { PageHeader } from "@/components/page";
 import { ProductFields } from "@/components/product-fields";
@@ -87,7 +87,10 @@ export default async function ProdutoPage({ params }: { params: Promise<{ id: st
                   <TableRow key={lot.id}>
                     <TableCell>{lot.warehouse.name}</TableCell>
                     <TableCell>{lot.lotCode || "—"}</TableCell>
-                    <TableCell>{formatDate(lot.expiryDate)}</TableCell>
+                    <TableCell>
+                      {formatDate(lot.expiryDate)}
+                      {isLotExpired(lot.expiryDate) ? <Badge className="ml-2" variant="destructive">Vencido</Badge> : null}
+                    </TableCell>
                     <TableCell>{formatNumber(lot.quantity)}</TableCell>
                   </TableRow>
                 ))}

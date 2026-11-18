@@ -5,6 +5,11 @@ const nextConfig: NextConfig = {
   // não se aplica a um painel autenticado com saldo em tempo real.
   cacheComponents: false,
   serverExternalPackages: ["bcryptjs", "exceljs", "pdf-lib"],
+  experimental: {
+    serverActions: {
+      bodySizeLimit: "3mb",
+    },
+  },
   turbopack: {
     rules: {
       "*.css": {

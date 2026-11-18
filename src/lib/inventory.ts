@@ -1,6 +1,7 @@
 import type { Prisma, Product, Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/audit";
+import { isLotExpired } from "@/lib/format";
 import { getSettings, type AppSettings } from "@/lib/settings";
 
 export class InventoryError extends Error {
@@ -27,6 +28,7 @@ type LotSlice = {
 export type MovementResult = {
   duplicate: boolean;
   movementId: string;
+  detail?: string;
 };
 
 function assertQuantity(quantity: number) {
@@ -73,16 +75,42 @@ async function addLot(
   await tx.stockLot.create({ data: input });
 }
 
-async function consumeLots(tx: Tx, productId: string, warehouseId: string, quantity: number) {
+function compareLots(a: { expiryDate: Date | null; createdAt: Date }, b: { expiryDate: Date | null; createdAt: Date }) {
+  if (!a.expiryDate && !b.expiryDate) return a.createdAt.getTime() - b.createdAt.getTime();
+  if (!a.expiryDate) return 1;
+  if (!b.expiryDate) return -1;
+  return a.expiryDate.getTime() - b.expiryDate.getTime();
+}
+
+function sellableQuantity(balance: number, lots: { quantity: number; expiryDate: Date | null }[]) {
+  let usable = 0;
+  let expired = 0;
+  for (const lot of lots) {
+    if (isLotExpired(lot.expiryDate)) expired += lot.quantity;
+    else usable += lot.quantity;
+  }
+  const uncovered = balance - usable - expired;
+  return { usable, expired, sellable: usable + Math.max(0, uncovered) };
+}
+
+function describeConsumption(slices: LotSlice[]) {
+  if (!slices.length) return undefined;
+  const parts = slices.map((slice) => {
+    const code = slice.lotCode || "sem código";
+    if (!slice.expiryDate) return `${code} (${slice.quantity})`;
+    const date = new Date(slice.expiryDate);
+    const label = `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")}/${date.getFullYear()}`;
+    return `${code} (${slice.quantity}, val. ${label})`;
+  });
+  return `Lote que vence primeiro: ${parts.join(", ")}.`;
+}
+
+async function consumeLots(tx: Tx, productId: string, warehouseId: string, quantity: number, skipExpired = false) {
   const lots = await tx.stockLot.findMany({
     where: { productId, warehouseId, quantity: { gt: 0 } },
   });
-  const sorted = [...lots].sort((a, b) => {
-    if (!a.expiryDate && !b.expiryDate) return a.createdAt.getTime() - b.createdAt.getTime();
-    if (!a.expiryDate) return 1;
-    if (!b.expiryDate) return -1;
-    return a.expiryDate.getTime() - b.expiryDate.getTime();
-  });
+  const pool = skipExpired ? lots.filter((lot) => !isLotExpired(lot.expiryDate)) : lots;
+  const sorted = [...pool].sort(compareLots);
   const consumed: LotSlice[] = [];
   let remaining = quantity;
   for (const lot of sorted) {
@@ -310,15 +338,21 @@ export async function registerExit(input: {
     const product = await requireProduct(tx, input.productId, true);
     const warehouse = await requireWarehouse(tx, input.warehouseId);
     const balance = await getOrCreateBalance(tx, product.id, warehouse.id);
-    if (balance.quantity < input.quantity) {
+    const openLots = await tx.stockLot.findMany({
+      where: { productId: product.id, warehouseId: warehouse.id, quantity: { gt: 0 } },
+    });
+    const availability = sellableQuantity(balance.quantity, openLots);
+    if (input.quantity > availability.sellable) {
       throw new InventoryError(
-        `Estoque insuficiente em ${warehouse.name}. Disponível: ${balance.quantity} ${product.unit}.`,
+        availability.expired > 0
+          ? `Não é possível retirar lote vencido em ${warehouse.name}. Disponível: ${availability.sellable} ${product.unit}. Vencido e bloqueado: ${availability.expired} ${product.unit}.`
+          : `Estoque insuficiente em ${warehouse.name}. Disponível: ${balance.quantity} ${product.unit}.`,
       );
     }
     const before = balance.quantity;
     const after = before - input.quantity;
     await tx.stockBalance.update({ where: { id: balance.id }, data: { quantity: after } });
-    const consumed = await consumeLots(tx, product.id, warehouse.id, input.quantity);
+    const consumed = await consumeLots(tx, product.id, warehouse.id, input.quantity, true);
     const movement = await tx.movement.create({
       data: {
         type: "EXIT",
@@ -375,7 +409,7 @@ export async function registerExit(input: {
       userAgent: input.actor.userAgent,
       metadata: { sku: product.sku, quantity: input.quantity, warehouse: warehouse.code, suspicious },
     });
-    return { duplicate: false, movementId: movement.id };
+    return { duplicate: false, movementId: movement.id, detail: describeConsumption(consumed) };
   });
 }
 

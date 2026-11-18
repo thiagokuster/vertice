@@ -65,7 +65,9 @@ export async function createExit(formData: FormData): Promise<ActionResult> {
     refreshViews();
     return {
       ok: true,
-      message: result.duplicate ? "Esta saída já tinha sido registrada." : "Saída confirmada e saldo atualizado.",
+      message: result.duplicate
+        ? "Esta saída já tinha sido registrada."
+        : `Saída confirmada e saldo atualizado.${result.detail ? ` ${result.detail}` : ""}`,
       id: result.movementId,
     };
   } catch (error) {

@@ -20,6 +20,7 @@ type Product = {
   location: string | null;
   active: boolean;
   trackExpiry: boolean;
+  imagePath?: string | null;
 };
 
 function money(cents: number | null | undefined) {
@@ -75,7 +76,20 @@ export function ProductFields({
           <option value="true">Sim</option>
         </NativeSelect>
       </Field>
-      <Field label="Imagem"><Input name="image" type="file" accept="image/jpeg,image/png,image/webp" /></Field>
+      <div className="grid gap-1.5 text-sm">
+        <span className="font-medium">Imagem</span>
+        {product?.imagePath ? (
+          <img src={product.imagePath} alt="" className="h-24 rounded-lg object-cover" />
+        ) : null}
+        <Input name="image" type="file" accept="image/jpeg,image/png,image/webp" />
+        {product?.imagePath ? (
+          <span className="flex items-center gap-2 text-muted-foreground">
+            <input name="removeImage" type="checkbox" value="true" />
+            Remover imagem atual
+          </span>
+        ) : null}
+        <span className="text-xs text-muted-foreground">JPG, PNG ou WebP, até 2 MB.</span>
+      </div>
       <div className="md:col-span-2">
         <Field label="Descrição"><Textarea name="description" defaultValue={product?.description ?? ""} /></Field>
       </div>

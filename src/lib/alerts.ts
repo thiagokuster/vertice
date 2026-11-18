@@ -1,10 +1,13 @@
 import { prisma } from "@/lib/prisma";
+import { startOfToday } from "@/lib/format";
 import { getSettings } from "@/lib/settings";
 
 export async function getStockAlerts() {
   const settings = await getSettings();
-  const limit = new Date();
+  const today = startOfToday();
+  const limit = new Date(today);
   limit.setDate(limit.getDate() + settings.expiryWarningDays);
+  limit.setHours(23, 59, 59, 999);
   const weekAgo = new Date();
   weekAgo.setDate(weekAgo.getDate() - 7);
 
@@ -20,13 +23,13 @@ export async function getStockAlerts() {
       _sum: { quantity: true },
     }),
     prisma.stockLot.findMany({
-      where: { quantity: { gt: 0 }, expiryDate: { lt: new Date() } },
+      where: { quantity: { gt: 0 }, expiryDate: { lt: today } },
       include: { product: true, warehouse: true },
       orderBy: { expiryDate: "asc" },
       take: 20,
     }),
     prisma.stockLot.findMany({
-      where: { quantity: { gt: 0 }, expiryDate: { gte: new Date(), lte: limit } },
+      where: { quantity: { gt: 0 }, expiryDate: { gte: today, lte: limit } },
       include: { product: true, warehouse: true },
       orderBy: { expiryDate: "asc" },
       take: 20,

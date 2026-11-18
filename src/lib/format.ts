@@ -21,6 +21,16 @@ export function formatNumber(value: number) {
   return new Intl.NumberFormat("pt-BR").format(value);
 }
 
+export function startOfToday() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
+export function isLotExpired(expiry: Date | string | null | undefined) {
+  if (!expiry) return false;
+  return new Date(expiry).getTime() < startOfToday().getTime();
+}
+
 export function formatDate(date: Date | string | null | undefined) {
   if (!date) return "—";
   return dateFormat.format(new Date(date));

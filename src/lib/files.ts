@@ -1,5 +1,6 @@
 import { mkdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { DomainError } from "@/lib/domain";
 
 const TYPES: Record<string, { ext: string; check: (bytes: Buffer) => boolean }> = {
   "image/jpeg": {
@@ -24,12 +25,17 @@ const TYPES: Record<string, { ext: string; check: (bytes: Buffer) => boolean }> 
   },
 };
 
+export function uploadFile(value: FormDataEntryValue | null) {
+  if (!value || typeof value === "string") return null;
+  if (typeof value.arrayBuffer !== "function" || value.size <= 0) return null;
+  return value;
+}
+
 export async function saveProductImage(file: File) {
-  const rule = TYPES[file.type];
-  if (!rule) throw new Error("Envie uma imagem JPG, PNG ou WebP.");
-  if (file.size > 2 * 1024 * 1024) throw new Error("A imagem deve ter no máximo 2 MB.");
+  if (file.size > 2 * 1024 * 1024) throw new DomainError("A imagem deve ter no máximo 2 MB.");
   const bytes = Buffer.from(await file.arrayBuffer());
-  if (!rule.check(bytes)) throw new Error("O arquivo enviado não é uma imagem válida.");
+  const rule = Object.values(TYPES).find((item) => item.check(bytes));
+  if (!rule) throw new DomainError("Envie uma imagem JPG, PNG ou WebP.");
   const name = `${crypto.randomUUID()}.${rule.ext}`;
   const directory = path.join(process.cwd(), "public", "uploads");
   await mkdir(directory, { recursive: true });

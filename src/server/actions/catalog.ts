@@ -5,7 +5,7 @@ import { writeAudit } from "@/lib/audit";
 import { getRequestMeta } from "@/lib/http";
 import { Permission } from "@/lib/permissions";
 import { assertPermission } from "@/lib/session";
-import { removeUpload, saveProductImage } from "@/lib/files";
+import { removeUpload, saveProductImage, uploadFile } from "@/lib/files";
 import {
   clean,
   emailSchema,
@@ -222,8 +222,8 @@ async function productInput(formData: FormData, currentImage?: string | null) {
   const salePrice = moneyField(text(formData, "salePrice"), "o preço de venda");
   const unit = requiredText(text(formData, "unit").toUpperCase(), 1, 10, "A unidade");
   let imagePath = currentImage ?? null;
-  const file = formData.get("image");
-  if (file instanceof File && file.size > 0) {
+  const file = uploadFile(formData.get("image"));
+  if (file) {
     imagePath = await saveProductImage(file);
     if (currentImage && currentImage !== imagePath) await removeUpload(currentImage);
   } else if (text(formData, "removeImage") === "true") {

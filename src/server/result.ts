@@ -10,6 +10,7 @@ export type ActionResult =
 const PATHS = [
   "/",
   "/produtos",
+  "/produtos/importar",
   "/categorias",
   "/fornecedores",
   "/entradas",
