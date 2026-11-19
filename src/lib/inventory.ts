@@ -1,5 +1,5 @@
 import type { Prisma, Product, Role } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
+import { prisma, prepareSqlite } from "@/lib/prisma";
 import { writeAudit } from "@/lib/audit";
 import { isLotExpired } from "@/lib/format";
 import { getSettings, type AppSettings } from "@/lib/settings";
@@ -218,6 +218,37 @@ async function reviewThresholds(tx: Tx, product: Product, effect: number) {
   }
 }
 
+const STOCK_LOCK = "stock_lock";
+
+function isRetryableLock(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /SQLITE_BUSY|SQLITE_LOCKED|database is locked|busy_snapshot|write conflict/i.test(message);
+}
+
+export async function withStockTransaction<T>(run: (tx: Tx) => Promise<T>) {
+  await prepareSqlite();
+  let last: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await prisma.$transaction(
+        async (tx) => {
+          await tx.systemSetting.upsert({
+            where: { key: STOCK_LOCK },
+            create: { key: STOCK_LOCK, value: "1" },
+            update: { value: String(Date.now()) },
+          });
+          return run(tx);
+        },
+        { maxWait: 5_000, timeout: 20_000 },
+      );
+    } catch (error) {
+      last = error;
+      if (attempt === 2 || !isRetryableLock(error)) throw error;
+    }
+  }
+  throw last;
+}
+
 async function requireProduct(tx: Tx, productId: string, allowInactive = false) {
   const product = await tx.product.findUnique({ where: { id: productId } });
   if (!product) throw new InventoryError("Produto não encontrado.");
@@ -251,7 +282,7 @@ export async function registerEntry(input: {
   idempotencyKey: string;
 }) {
   assertQuantity(input.quantity);
-  return prisma.$transaction(async (tx) => {
+  return withStockTransaction(async (tx) => {
     const existing = await existingKey(tx, input.idempotencyKey);
     if (existing) return { duplicate: true, movementId: existing.id };
     const product = await requireProduct(tx, input.productId);
@@ -332,7 +363,7 @@ export async function registerExit(input: {
 }) {
   assertQuantity(input.quantity);
   const settings = input.settings ?? (await getSettings());
-  return prisma.$transaction(async (tx) => {
+  return withStockTransaction(async (tx) => {
     const existing = await existingKey(tx, input.idempotencyKey);
     if (existing) return { duplicate: true, movementId: existing.id };
     const product = await requireProduct(tx, input.productId, true);
@@ -427,7 +458,7 @@ export async function registerTransfer(input: {
   if (input.fromWarehouseId === input.toWarehouseId) {
     throw new InventoryError("Escolha depósitos de origem e destino diferentes.");
   }
-  return prisma.$transaction(async (tx) => {
+  return withStockTransaction(async (tx) => {
     const existing = await existingKey(tx, input.idempotencyKey);
     if (existing) return { duplicate: true, movementId: existing.id };
     const product = await requireProduct(tx, input.productId);
@@ -527,7 +558,7 @@ export async function registerAdjustment(input: {
   if (!Number.isInteger(input.newQuantity) || input.newQuantity < 0 || input.newQuantity > 1_000_000) {
     throw new InventoryError("A nova quantidade deve ser um inteiro entre 0 e 1.000.000.");
   }
-  return prisma.$transaction(async (tx) => {
+  return withStockTransaction(async (tx) => {
     const existing = await existingKey(tx, input.idempotencyKey);
     if (existing) return { duplicate: true, movementId: existing.id };
     const product = await requireProduct(tx, input.productId, true);
@@ -597,7 +628,7 @@ export async function reverseMovement(input: {
   reason: string;
   idempotencyKey: string;
 }) {
-  return prisma.$transaction(async (tx) => {
+  return withStockTransaction(async (tx) => {
     const existing = await existingKey(tx, input.idempotencyKey);
     if (existing) return { duplicate: true, movementId: existing.id };
     const original = await tx.movement.findUnique({

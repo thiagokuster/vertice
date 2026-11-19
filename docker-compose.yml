@@ -1,0 +1,14 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: vertice
+      POSTGRES_PASSWORD: vertice
+      POSTGRES_DB: vertice
+    ports:
+      - "5432:5432"
+    volumes:
+      - vertice-pg:/var/lib/postgresql/data
+
+volumes:
+  vertice-pg:

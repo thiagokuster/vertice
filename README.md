@@ -50,6 +50,14 @@ No desenvolvimento, com `SEED_DEMO=true`, o seed cria usuários de exemplo:
 
 Em produção, defina `ADMIN_EMAIL` e `ADMIN_PASSWORD` e deixe `SEED_DEMO` desligado. A recuperação de senha envia e-mail se `SMTP_HOST` estiver configurado.
 
+## Antes de usar em uma empresa
+
+O SQLite serve enquanto existir um único processo do servidor. Saldo, lote, histórico e auditoria de cada movimentação entram na mesma transação. Com mais de uma instância, use PostgreSQL: `docker compose up -d`, troque o provider do Prisma para `postgresql`, aponte `DATABASE_URL` para `postgresql://vertice:vertice@localhost:5432/vertice` e crie uma migração nova. As migrações atuais foram geradas para SQLite e não devem ser reaplicadas no Postgres.
+
+O processo grava uma cópia em `backups/` uma vez por dia. `npm run db:backup` faz a cópia na hora e conserva as 14 mais recentes. Com PostgreSQL, o mesmo comando usa `pg_dump`.
+
+`npm run verify` confere permissões, saldo e o desfazer de uma gravação interrompida. `npm run test:access`, com `npm run dev` no ar, entra com os três perfis e confere páginas, exportação e o fim da sessão depois de um bloqueio.
+
 ## 📄 Licença
 
 [MIT](LICENSE)

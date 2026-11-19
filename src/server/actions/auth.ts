@@ -8,7 +8,7 @@ import { auth, signIn, signOut } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/audit";
 import { getRequestMeta } from "@/lib/http";
-import { hitRateLimit } from "@/lib/rate-limit";
+import { hitRateLimit, LOGIN_LIMIT, LOGIN_WINDOW_MS, tooManyLoginAttempts } from "@/lib/rate-limit";
 import { sendPasswordResetEmail } from "@/lib/mailer";
 import { clean, emailSchema, passwordSchema } from "@/lib/validators";
 import { fail, isRedirectError, refreshViews, type ActionResult } from "@/server/result";
@@ -35,7 +35,11 @@ export async function loginAction(formData: FormData): Promise<ActionResult> {
   const meta = await getRequestMeta();
   const parsed = emailSchema.safeParse(email);
   if (!parsed.success || !password) return { ok: false, message: "Informe e-mail e senha." };
-  if (hitRateLimit(`login:${meta.ip}`, 10, 15 * 60 * 1000) || hitRateLimit(`login-email:${email}`, 10, 15 * 60 * 1000)) {
+  if (
+    hitRateLimit(`login:${meta.ip ?? "sem-ip"}`, LOGIN_LIMIT, LOGIN_WINDOW_MS) ||
+    hitRateLimit(`login-email:${email}`, LOGIN_LIMIT, LOGIN_WINDOW_MS) ||
+    (await tooManyLoginAttempts(email, meta.ip))
+  ) {
     await prisma.loginAttempt.create({
       data: { email, success: false, ip: meta.ip, userAgent: meta.userAgent },
     });

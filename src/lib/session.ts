@@ -2,7 +2,8 @@ import "server-only";
 import { redirect } from "next/navigation";
 import type { Permission } from "@/lib/permissions";
 import { userCan } from "@/lib/permissions";
-import { auth, signOut } from "@/auth";
+import { auth } from "@/auth";
+import { sessionBlockReason } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/audit";
 
@@ -10,10 +11,8 @@ export async function requireUser() {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
   const user = await prisma.user.findUnique({ where: { id: session.user.id } });
-  const locked = user?.lockedUntil != null && user.lockedUntil > new Date();
-  if (!user || !user.active || locked || user.tokenVersion !== session.user.tokenVersion) {
-    await signOut({ redirectTo: "/login" });
-    redirect("/login");
+  if (!user || sessionBlockReason(user, session.user.tokenVersion)) {
+    redirect("/api/sessao/encerrar");
   }
   return user;
 }

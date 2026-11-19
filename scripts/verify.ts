@@ -1,6 +1,8 @@
 import { prisma } from "../src/lib/prisma";
+import { sessionBlockReason } from "../src/lib/access";
 import { Permission, userCan } from "../src/lib/permissions";
-import { InventoryError, registerExit } from "../src/lib/inventory";
+import { InventoryError, registerExit, withStockTransaction } from "../src/lib/inventory";
+import { tooManyLoginAttempts } from "../src/lib/rate-limit";
 import { parseProductCsv } from "../src/lib/csv";
 import { removeUpload, saveProductImage } from "../src/lib/files";
 import { syncOperationalNotifications } from "../src/lib/notifications";
@@ -170,6 +172,68 @@ else {
 }
 if (expiryNotice) console.log("ok aviso de validade:", expiryNotice.title);
 else console.log("ok sem lote perto do vencimento neste momento");
+
+const activeUser = { active: true, lockedUntil: null, tokenVersion: 2 };
+if (sessionBlockReason(activeUser, 2) === null) console.log("ok sessão válida");
+else {
+  failed += 1;
+  console.log("ERRO sessão válida foi recusada");
+}
+if (sessionBlockReason({ ...activeUser, active: false }, 2) === "inactive") console.log("ok conta inativa revoga a sessão");
+else {
+  failed += 1;
+  console.log("ERRO conta inativa passou");
+}
+if (sessionBlockReason({ ...activeUser, lockedUntil: new Date(Date.now() + 60_000) }, 2) === "locked") {
+  console.log("ok conta bloqueada revoga a sessão");
+} else {
+  failed += 1;
+  console.log("ERRO conta bloqueada passou");
+}
+if (sessionBlockReason(activeUser, 1) === "revoked") console.log("ok versão antiga do token é recusada");
+else {
+  failed += 1;
+  console.log("ERRO token antigo passou");
+}
+
+const tonerBalance = await prisma.stockBalance.findFirst({ orderBy: { quantity: "desc" } });
+if (!tonerBalance) {
+  failed += 1;
+  console.log("ERRO não há saldo para testar a transação");
+}
+const quantityBefore = tonerBalance?.quantity ?? 0;
+let rolledBack = false;
+if (tonerBalance) {
+  try {
+    await withStockTransaction(async (tx) => {
+      await tx.stockBalance.update({ where: { id: tonerBalance.id }, data: { quantity: quantityBefore + 4 } });
+      throw new InventoryError("falha proposital para testar a transação");
+    });
+  } catch (error) {
+    rolledBack = error instanceof InventoryError;
+  }
+}
+const quantityAfter = tonerBalance
+  ? (await prisma.stockBalance.findUniqueOrThrow({ where: { id: tonerBalance.id } })).quantity
+  : quantityBefore;
+if (rolledBack && quantityAfter === quantityBefore) console.log("ok movimentação interrompida não altera o saldo");
+else {
+  failed += 1;
+  console.log("ERRO a transação deixou saldo", quantityAfter, "em vez de", quantityBefore);
+}
+
+const probeEmail = "forca-bruta-verify@teste.local";
+const probeIp = "203.0.113.10";
+await prisma.loginAttempt.createMany({
+  data: Array.from({ length: 10 }, () => ({ email: probeEmail, success: false, ip: probeIp })),
+});
+const limited = await tooManyLoginAttempts(probeEmail, probeIp);
+await prisma.loginAttempt.deleteMany({ where: { email: probeEmail } });
+if (limited) console.log("ok excesso de tentativas fica registrado no banco");
+else {
+  failed += 1;
+  console.log("ERRO o limite de tentativas não consultou o banco");
+}
 
 await prisma.$disconnect();
 if (failed > 0) process.exit(1);

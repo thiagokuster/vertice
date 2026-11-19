@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/audit";
 import { getSettings } from "@/lib/settings";
+import { tooManyLoginAttempts } from "@/lib/rate-limit";
 import { emailSchema } from "@/lib/validators";
 import { SESSION_HOURS } from "@/lib/constants";
 
@@ -45,6 +46,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           return null;
         }
 
+        if (await tooManyLoginAttempts(email, meta.ip)) {
+          await prisma.loginAttempt.create({
+            data: { email, success: false, ip: meta.ip, userAgent: meta.userAgent },
+          });
+          await writeAudit(prisma, {
+            action: "LOGIN_THROTTLED",
+            entity: "User",
+            metadata: { email },
+            ...meta,
+          });
+          return null;
+        }
+
         const user = await prisma.user.findUnique({ where: { email } });
         const passwordOk = user ? await bcrypt.compare(password, user.passwordHash) : false;
         const stillLocked = Boolean(user?.lockedUntil && user.lockedUntil > new Date());
@@ -58,7 +72,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                 : null;
             await prisma.user.update({
               where: { id: user.id },
-              data: { failedLoginAttempts: lockedUntil ? 0 : attempts, lockedUntil },
+              data: {
+                failedLoginAttempts: lockedUntil ? 0 : attempts,
+                lockedUntil,
+                ...(lockedUntil ? { tokenVersion: { increment: 1 } } : {}),
+              },
             });
             await writeAudit(prisma, {
               userId: user.id,

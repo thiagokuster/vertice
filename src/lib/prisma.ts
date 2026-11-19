@@ -11,3 +11,12 @@ export const prisma =
 if (process.env.NODE_ENV !== "production") {
   globalForPrisma.prisma = prisma;
 }
+
+let sqliteReady = false;
+
+export async function prepareSqlite() {
+  if (sqliteReady || !process.env.DATABASE_URL?.startsWith("file:")) return;
+  await prisma.$queryRawUnsafe("PRAGMA journal_mode = WAL");
+  await prisma.$queryRawUnsafe("PRAGMA busy_timeout = 5000");
+  sqliteReady = true;
+}

@@ -10,7 +10,10 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:seed": "node --env-file=.env ./node_modules/tsx/dist/cli.mjs prisma/seed.ts",
-    "db:setup": "prisma migrate dev --name init && node --env-file=.env ./node_modules/tsx/dist/cli.mjs prisma/seed.ts"
+    "db:setup": "prisma migrate dev --name init && node --env-file=.env ./node_modules/tsx/dist/cli.mjs prisma/seed.ts",
+    "db:backup": "node --env-file=.env ./node_modules/tsx/dist/cli.mjs scripts/backup.ts",
+    "verify": "node --env-file=.env ./node_modules/tsx/dist/cli.mjs scripts/verify.ts",
+    "test:access": "node --env-file=.env ./node_modules/tsx/dist/cli.mjs scripts/access.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",
