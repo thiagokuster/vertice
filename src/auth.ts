@@ -4,9 +4,13 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/audit";
 import { getSettings } from "@/lib/settings";
-import { tooManyLoginAttempts } from "@/lib/rate-limit";
+import { LOGIN_LIMIT } from "@/lib/rate-limit";
+import { clientIpFrom } from "@/lib/client-ip";
+import { assertProductionAuthSecret } from "@/lib/secrets";
 import { emailSchema } from "@/lib/validators";
 import { SESSION_HOURS } from "@/lib/constants";
+
+const dummyHash = bcrypt.hash("senha-inexistente", 12);
 
 class AccountLockedError extends CredentialsSignin {
   code = "account_locked";
@@ -17,11 +21,7 @@ class InactiveAccountError extends CredentialsSignin {
 }
 
 function requestMeta(request: Request | undefined) {
-  const forwarded = request?.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  return {
-    ip: forwarded || request?.headers.get("x-real-ip") || null,
-    userAgent: request?.headers.get("user-agent") || null,
-  };
+  return clientIpFrom(request?.headers ?? { get: () => null });
 }
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
@@ -35,6 +35,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         password: { label: "Senha", type: "password" },
       },
       authorize: async (credentials, request) => {
+        assertProductionAuthSecret();
         const email = String(credentials?.email ?? "").trim().toLowerCase();
         const password = String(credentials?.password ?? "");
         const meta = requestMeta(request);
@@ -46,103 +47,82 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           return null;
         }
 
-        if (await tooManyLoginAttempts(email, meta.ip)) {
-          await prisma.loginAttempt.create({
-            data: { email, success: false, ip: meta.ip, userAgent: meta.userAgent },
-          });
-          await writeAudit(prisma, {
-            action: "LOGIN_THROTTLED",
-            entity: "User",
-            metadata: { email },
-            ...meta,
-          });
-          return null;
-        }
-
-        const user = await prisma.user.findUnique({ where: { email } });
-        const passwordOk = user ? await bcrypt.compare(password, user.passwordHash) : false;
-        const stillLocked = Boolean(user?.lockedUntil && user.lockedUntil > new Date());
-        if (!user || !passwordOk) {
-          if (user && !stillLocked) {
-            const settings = await getSettings();
-            const attempts = user.failedLoginAttempts + 1;
-            const lockedUntil =
-              attempts >= settings.maxLoginAttempts
-                ? new Date(Date.now() + settings.lockoutMinutes * 60 * 1000)
-                : null;
-            await prisma.user.update({
-              where: { id: user.id },
-              data: {
-                failedLoginAttempts: lockedUntil ? 0 : attempts,
-                lockedUntil,
-                ...(lockedUntil ? { tokenVersion: { increment: 1 } } : {}),
-              },
-            });
-            await writeAudit(prisma, {
-              userId: user.id,
-              action: lockedUntil ? "ACCOUNT_LOCKED" : "LOGIN_FAILED",
-              entity: "User",
-              entityId: user.id,
-              metadata: { attempts },
-              ...meta,
-            });
-            if (lockedUntil) throw new AccountLockedError();
-          } else {
-            await writeAudit(prisma, {
-              action: "LOGIN_FAILED",
-              entity: "User",
-              metadata: { email },
-              ...meta,
-            });
-          }
-          await prisma.loginAttempt.create({
+        const settings = await getSettings();
+        const since = new Date(Date.now() - settings.lockoutMinutes * 60 * 1000);
+        const placeholder = await dummyHash;
+        const result = await prisma.$transaction(async (tx) => {
+          const user = await tx.user.findUnique({ where: { email } });
+          const attempt = await tx.loginAttempt.create({
             data: { email, userId: user?.id, success: false, ip: meta.ip, userAgent: meta.userAgent },
           });
-          return null;
-        }
+          const byEmail = await tx.loginAttempt.count({
+            where: { email, success: false, createdAt: { gte: since } },
+          });
+          const byIp = meta.ip
+            ? await tx.loginAttempt.count({
+                where: { ip: meta.ip, success: false, createdAt: { gte: since } },
+              })
+            : 0;
+          const limited = byEmail > settings.maxLoginAttempts || (Boolean(meta.ip) && byIp > LOGIN_LIMIT);
+          const passwordOk = await bcrypt.compare(password, user?.passwordHash ?? placeholder);
+          if (user && passwordOk && user.lockedUntil && user.lockedUntil > new Date()) {
+            return { status: "locked" as const };
+          }
+          if (user && passwordOk && !user.active) return { status: "inactive" as const, userId: user.id };
+          if (user && passwordOk) {
+            const updated = await tx.user.update({
+              where: { id: user.id },
+              data: { failedLoginAttempts: 0, lockedUntil: null, lastLoginAt: new Date() },
+            });
+            await tx.loginAttempt.update({ where: { id: attempt.id }, data: { success: true } });
+            return { status: "ok" as const, user: updated };
+          }
+          if (user && !limited) {
+            await tx.user.update({
+              where: { id: user.id },
+              data: { failedLoginAttempts: { increment: 1 } },
+            });
+          }
+          return { status: limited ? ("limited" as const) : ("invalid" as const), userId: user?.id };
+        });
 
-        if (user.lockedUntil && user.lockedUntil > new Date()) {
-          await prisma.loginAttempt.create({
-            data: { email, userId: user.id, success: false, ip: meta.ip, userAgent: meta.userAgent },
-          });
-          throw new AccountLockedError();
-        }
-        if (!user.active) {
-          await prisma.loginAttempt.create({
-            data: { email, userId: user.id, success: false, ip: meta.ip, userAgent: meta.userAgent },
-          });
+        if (result.status === "locked") throw new AccountLockedError();
+        if (result.status === "inactive") {
           await writeAudit(prisma, {
-            userId: user.id,
+            userId: result.userId,
             action: "LOGIN_BLOCKED",
             entity: "User",
-            entityId: user.id,
+            entityId: result.userId,
             metadata: { reason: "inactive" },
             ...meta,
           });
           throw new InactiveAccountError();
         }
-
-        await prisma.user.update({
-          where: { id: user.id },
-          data: { failedLoginAttempts: 0, lockedUntil: null, lastLoginAt: new Date() },
-        });
-        await prisma.loginAttempt.create({
-          data: { email, userId: user.id, success: true, ip: meta.ip, userAgent: meta.userAgent },
-        });
+        if (result.status === "ok") {
+          await writeAudit(prisma, {
+            userId: result.user.id,
+            action: "LOGIN",
+            entity: "User",
+            entityId: result.user.id,
+            ...meta,
+          });
+          return {
+            id: result.user.id,
+            name: result.user.name,
+            email: result.user.email,
+            role: result.user.role,
+            tokenVersion: result.user.tokenVersion,
+          };
+        }
         await writeAudit(prisma, {
-          userId: user.id,
-          action: "LOGIN",
+          userId: result.userId,
+          action: result.status === "limited" ? "LOGIN_THROTTLED" : "LOGIN_FAILED",
           entity: "User",
-          entityId: user.id,
+          entityId: result.userId,
+          metadata: { email },
           ...meta,
         });
-        return {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          tokenVersion: user.tokenVersion,
-        };
+        return null;
       },
     }),
   ],

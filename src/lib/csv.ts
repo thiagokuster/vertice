@@ -99,10 +99,11 @@ function headerKey(value: string) {
 
 export function parseProductCsv(input: string) {
   const table = parseCsv(input);
-  if (table.length < 2) return { rows: [] as ProductCsvRow[], error: "O arquivo precisa de um cabeçalho e ao menos um produto." };
+  if (table.length < 2) return { rows: [] as ProductCsvRow[], fields: [] as string[], error: "O arquivo precisa de um cabeçalho e ao menos um produto." };
   const columns = table[0].map(headerKey);
-  if (!columns.includes("sku") || !columns.includes("name") || !columns.includes("category")) {
-    return { rows: [] as ProductCsvRow[], error: "O cabeçalho precisa ter sku, nome e categoria." };
+  const fields = [...new Set(columns.filter((key) => key))];
+  if (!fields.includes("sku") || !fields.includes("name") || !fields.includes("category")) {
+    return { rows: [] as ProductCsvRow[], fields, error: "O cabeçalho precisa ter sku, nome e categoria." };
   }
   const rows = table.slice(1).map((cells, index) => {
     const record: Record<string, string> = {};
@@ -126,5 +127,5 @@ export function parseProductCsv(input: string) {
       expiry: record.expiry ?? "",
     };
   });
-  return { rows, error: null as string | null };
+  return { rows, fields, error: null as string | null };
 }

@@ -1,4 +1,7 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { auth } from "@/auth";
 import { LoginForm } from "@/components/auth-forms";
 
 export default async function LoginPage({
@@ -6,6 +9,12 @@ export default async function LoginPage({
 }: {
   searchParams: Promise<{ callbackUrl?: string; senha?: string }>;
 }) {
+  const session = await auth();
+  if (session?.user?.id) redirect("/");
+  const jar = await cookies();
+  if (jar.get("authjs.session-token") || jar.get("__Secure-authjs.session-token")) {
+    redirect("/api/sessao/encerrar");
+  }
   const params = await searchParams;
   return (
     <main className="grid min-h-screen lg:grid-cols-2">

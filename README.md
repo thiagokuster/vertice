@@ -48,11 +48,11 @@ No desenvolvimento, com `SEED_DEMO=true`, o seed cria usuários de exemplo:
 - Padrão: `operador@estoque.local` / `Operador@123456`
 - Ajudante: `ajudante@estoque.local` / `Ajudante@123456`
 
-Em produção, defina `ADMIN_EMAIL` e `ADMIN_PASSWORD` e deixe `SEED_DEMO` desligado. A recuperação de senha envia e-mail se `SMTP_HOST` estiver configurado.
+Em produção, defina `ADMIN_EMAIL` e `ADMIN_PASSWORD` com uma senha própria e deixe `SEED_DEMO` desligado. A senha de exemplo só é criada com `SEED_DEMO=true` fora de produção. `AUTH_SECRET` precisa ter pelo menos 32 caracteres e não pode ficar com o valor de exemplo. Se o sistema ficar atrás de um proxy, liste o endereço dele em `TRUSTED_PROXIES`; sem essa lista, o IP do cabeçalho não entra no limite de tentativas. A recuperação de senha envia e-mail se `SMTP_HOST` estiver configurado.
 
 ## Antes de usar em uma empresa
 
-O SQLite serve enquanto existir um único processo do servidor. Saldo, lote, histórico e auditoria de cada movimentação entram na mesma transação. Com mais de uma instância, use PostgreSQL: `docker compose up -d`, troque o provider do Prisma para `postgresql`, aponte `DATABASE_URL` para `postgresql://vertice:vertice@localhost:5432/vertice` e crie uma migração nova. As migrações atuais foram geradas para SQLite e não devem ser reaplicadas no Postgres.
+O SQLite serve enquanto existir um único processo do servidor. Saldo, lote, histórico e auditoria de cada movimentação entram na mesma transação. O `docker-compose.yml` sobe um PostgreSQL, mas o Prisma deste repositório ainda usa SQLite e as migrações atuais não rodam no Postgres. Para trocar, altere o provider para `postgresql`, aponte `DATABASE_URL` e crie uma migração nova.
 
 O processo grava uma cópia em `backups/` uma vez por dia. `npm run db:backup` faz a cópia na hora e conserva as 14 mais recentes. Com PostgreSQL, o mesmo comando usa `pg_dump`.
 

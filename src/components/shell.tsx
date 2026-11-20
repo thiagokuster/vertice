@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { Menu, Moon, Search, Sun, X } from "lucide-react";
@@ -111,12 +111,10 @@ function GlobalSearch() {
   const [q, setQ] = useState("");
   const [items, setItems] = useState<{ id: string; name: string; sku: string }[]>([]);
   useEffect(() => {
-    if (q.trim().length < 2) {
-      setItems([]);
-      return;
-    }
+    const query = q.trim();
+    if (query.length < 2) return;
     const timer = setTimeout(async () => {
-      const response = await fetch(`/api/busca?q=${encodeURIComponent(q.trim())}`);
+      const response = await fetch(`/api/busca?q=${encodeURIComponent(query)}`);
       if (response.ok) setItems(await response.json());
     }, 250);
     return () => clearTimeout(timer);
@@ -124,8 +122,17 @@ function GlobalSearch() {
   return (
     <div className="relative min-w-0 flex-1">
       <Search className="pointer-events-none absolute top-2 left-2.5 size-4 text-muted-foreground" />
-      <Input value={q} onChange={(event) => setQ(event.target.value)} placeholder="Buscar produto, SKU ou código de barras" className="pl-8" />
-      {items.length > 0 ? (
+      <Input
+        value={q}
+        onChange={(event) => {
+          const value = event.target.value;
+          setQ(value);
+          if (value.trim().length < 2) setItems([]);
+        }}
+        placeholder="Buscar produto, SKU ou código de barras"
+        className="pl-8"
+      />
+      {q.trim().length >= 2 && items.length > 0 ? (
         <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border bg-popover shadow-lg">
           {items.map((item) => (
             <Link key={item.id} href={`/produtos/${item.id}`} className="block px-3 py-2 text-sm hover:bg-muted" onClick={() => setQ("")}>
@@ -141,8 +148,11 @@ function GlobalSearch() {
 
 function ThemeToggle() {
   const { theme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const mounted = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
   if (!mounted) return <div className="size-8" />;
   const dark = theme === "dark";
   return (

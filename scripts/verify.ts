@@ -4,6 +4,9 @@ import { Permission, userCan } from "../src/lib/permissions";
 import { InventoryError, registerExit, withStockTransaction } from "../src/lib/inventory";
 import { tooManyLoginAttempts } from "../src/lib/rate-limit";
 import { parseProductCsv } from "../src/lib/csv";
+import { productImportPlan } from "../src/lib/product-import";
+import { clientIpFrom } from "../src/lib/client-ip";
+import { assertProductionAuthSecret, resolveAdminPassword } from "../src/lib/secrets";
 import { removeUpload, saveProductImage } from "../src/lib/files";
 import { syncOperationalNotifications } from "../src/lib/notifications";
 import { assertCanDeactivate, assertCanDelete } from "../src/lib/users";
@@ -74,6 +77,26 @@ if (csv.error || csv.rows[0]?.name !== "Item teste") {
   console.log("ERRO csv", csv);
 } else {
   console.log("ok csv de produtos");
+}
+const partialPlan = productImportPlan({
+  row: csv.rows[0],
+  fields: csv.fields,
+  categoryId: "categoria",
+  supplierId: null,
+  creating: false,
+  current: { minStock: 30, maxStock: 80 },
+});
+if (
+  partialPlan.name === "Item teste" &&
+  !("minStock" in partialPlan) &&
+  !("trackExpiry" in partialPlan) &&
+  !("unitCost" in partialPlan) &&
+  !("barcode" in partialPlan)
+) {
+  console.log("ok csv parcial não apaga os outros campos");
+} else {
+  failed += 1;
+  console.log("ERRO csv parcial alteraria campos ausentes", partialPlan);
 }
 const csvMissing = parseProductCsv("nome;categoria\nItem;Geral\n");
 if (!csvMissing.error) {
@@ -233,6 +256,32 @@ if (limited) console.log("ok excesso de tentativas fica registrado no banco");
 else {
   failed += 1;
   console.log("ERRO o limite de tentativas não consultou o banco");
+}
+
+const ignored = clientIpFrom(new Headers({ "x-forwarded-for": "203.0.113.8" }), []);
+const trusted = clientIpFrom(new Headers({ "x-forwarded-for": "203.0.113.8, 10.0.0.1" }), ["10.0.0.1"]);
+const production = { NODE_ENV: "production", NEXT_PHASE: "", AUTH_SECRET: "troque-por-um-segredo-longo", SEED_DEMO: "true" };
+let secretRejected = false;
+try {
+  assertProductionAuthSecret(production);
+} catch {
+  secretRejected = true;
+}
+let demoPasswordRejected = false;
+try {
+  resolveAdminPassword(undefined, production);
+} catch {
+  demoPasswordRejected = true;
+}
+if (ignored.ip === null && trusted.ip === "203.0.113.8") console.log("ok IP só é aceito de proxy conhecido");
+else {
+  failed += 1;
+  console.log("ERRO leitura de IP", ignored.ip, trusted.ip);
+}
+if (secretRejected && demoPasswordRejected) console.log("ok produção recusa segredo e senha de exemplo");
+else {
+  failed += 1;
+  console.log("ERRO produção aceitou segredo ou senha de exemplo");
 }
 
 await prisma.$disconnect();

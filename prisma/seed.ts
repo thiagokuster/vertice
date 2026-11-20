@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import { prisma } from "../src/lib/prisma";
+import { resolveAdminPassword } from "../src/lib/secrets";
 import { DELEGABLE } from "../src/lib/permissions";
 import { DEFAULT_SETTINGS, SETTING_KEYS } from "../src/lib/settings";
 import { registerEntry, registerExit, registerTransfer } from "../src/lib/inventory";
@@ -64,16 +65,13 @@ async function main() {
   });
 
   const adminEmail = (process.env.ADMIN_EMAIL ?? "admin@estoque.local").toLowerCase();
-  const adminPassword = process.env.ADMIN_PASSWORD;
   const adminExists = await prisma.user.findFirst({ where: { role: "ADMIN" } });
   if (!adminExists) {
-    if (process.env.NODE_ENV === "production" && !adminPassword) {
-      throw new Error("Em produção, defina ADMIN_EMAIL e ADMIN_PASSWORD antes do primeiro acesso.");
-    }
+    const adminPassword = resolveAdminPassword(process.env.ADMIN_PASSWORD);
     await ensureUser({
       name: "Administrador",
       email: adminEmail,
-      password: adminPassword || "Admin@123456",
+      password: adminPassword,
       role: "ADMIN",
     });
     console.log(`Administrador inicial: ${adminEmail}`);

@@ -1,11 +1,7 @@
 import "server-only";
 import { headers } from "next/headers";
+import { clientIpFrom } from "@/lib/client-ip";
 
 export async function getRequestMeta() {
-  const headerList = await headers();
-  const forwarded = headerList.get("x-forwarded-for")?.split(",")[0]?.trim();
-  return {
-    ip: forwarded || headerList.get("x-real-ip"),
-    userAgent: headerList.get("user-agent"),
-  };
+  return clientIpFrom(await headers());
 }

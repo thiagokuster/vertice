@@ -26,13 +26,6 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (token && pathname === "/login") {
-    const url = request.nextUrl.clone();
-    url.pathname = "/";
-    url.search = "";
-    return NextResponse.redirect(url);
-  }
-
   return NextResponse.next();
 }
 

@@ -7,13 +7,10 @@ import { getRequestMeta } from "@/lib/http";
 import { parseProductCsv } from "@/lib/csv";
 import { DomainError } from "@/lib/domain";
 import { uploadFile } from "@/lib/files";
+import { productImportPlan } from "@/lib/product-import";
 import { Permission, userCan } from "@/lib/permissions";
 import { assertPermission } from "@/lib/session";
-import { integerField, moneyField } from "@/lib/validators";
 import { fail, refreshViews, type ActionResult } from "@/server/result";
-
-const YES = new Set(["sim", "s", "true", "1", "yes"]);
-const NO = new Set(["nao", "não", "n", "false", "0", "no", ""]);
 
 export async function importProducts(formData: FormData): Promise<ActionResult> {
   const gate = await assertPermission(Permission.PRODUCTS_CREATE);
@@ -33,6 +30,7 @@ export async function importProducts(formData: FormData): Promise<ActionResult> 
     ]);
     const categoryByName = new Map(categories.map((category) => [category.name.toLocaleLowerCase("pt-BR"), category]));
     const supplierByName = new Map(suppliers.map((supplier) => [supplier.companyName.toLocaleLowerCase("pt-BR"), supplier]));
+    const fields = parsed.fields;
     const seen = new Set<string>();
     const errors: string[] = [];
     let created = 0;
@@ -42,11 +40,8 @@ export async function importProducts(formData: FormData): Promise<ActionResult> 
     for (const row of parsed.rows) {
       try {
         const sku = row.sku.trim().toUpperCase();
-        if (sku.length < 2 || sku.length > 40) throw new DomainError("o SKU deve ter de 2 a 40 caracteres.");
         if (seen.has(sku)) throw new DomainError("SKU repetido no arquivo.");
         seen.add(sku);
-        const name = row.name.trim();
-        if (name.length < 2 || name.length > 120) throw new DomainError("o nome deve ter de 2 a 120 caracteres.");
         const categoryName = row.category.trim();
         if (categoryName.length < 2 || categoryName.length > 80) throw new DomainError("a categoria deve ter de 2 a 80 caracteres.");
         let category = categoryByName.get(categoryName.toLocaleLowerCase("pt-BR"));
@@ -55,39 +50,21 @@ export async function importProducts(formData: FormData): Promise<ActionResult> 
           categoryByName.set(category.name.toLocaleLowerCase("pt-BR"), category);
           categoriesCreated += 1;
         }
-        const supplierName = row.supplier.trim();
+        const existing = await prisma.product.findUnique({ where: { sku } });
         let supplierId: string | null = null;
-        if (supplierName) {
-          const supplier = supplierByName.get(supplierName.toLocaleLowerCase("pt-BR"));
-          if (!supplier) throw new DomainError(`fornecedor "${supplierName}" não está cadastrado.`);
+        if (fields.includes("supplier") && row.supplier.trim()) {
+          const supplier = supplierByName.get(row.supplier.trim().toLocaleLowerCase("pt-BR"));
+          if (!supplier) throw new DomainError(`fornecedor "${row.supplier.trim()}" não está cadastrado.`);
           supplierId = supplier.id;
         }
-        const unit = (row.unit.trim() || "UN").toUpperCase();
-        if (unit.length < 1 || unit.length > 10) throw new DomainError("a unidade deve ter até 10 caracteres.");
-        const minStock = row.min.trim() ? integerField(row.min.trim(), "O estoque mínimo", 0, 1_000_000) : 0;
-        const maxStock = row.max.trim() ? integerField(row.max.trim(), "O estoque máximo", 0, 1_000_000) : null;
-        if (maxStock != null && maxStock < minStock) throw new DomainError("o estoque máximo não pode ser menor que o mínimo.");
-        const unitCost = moneyField(row.cost.trim(), "o custo") ?? 0;
-        const salePrice = moneyField(row.price.trim(), "o preço");
-        const expiry = row.expiry.trim().toLowerCase();
-        if (!YES.has(expiry) && !NO.has(expiry)) throw new DomainError("controla_validade deve ser sim ou não.");
-        const barcode = row.barcode.trim() || null;
-        const data = {
-          sku,
-          name,
-          description: row.description.trim() || null,
+        const data = productImportPlan({
+          row,
+          fields,
           categoryId: category.id,
           supplierId,
-          unit,
-          minStock,
-          maxStock,
-          unitCost,
-          salePrice,
-          location: row.location.trim() || null,
-          barcode,
-          trackExpiry: YES.has(expiry),
-        };
-        const existing = await prisma.product.findUnique({ where: { sku } });
+          creating: !existing,
+          current: existing ? { minStock: existing.minStock, maxStock: existing.maxStock } : undefined,
+        });
         if (existing) {
           if (!canUpdate) throw new DomainError("este SKU já existe e o perfil não pode alterá-lo.");
           await prisma.product.update({ where: { id: existing.id }, data });
